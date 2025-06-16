@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>AES-256 HTML Encryptor</title>
+  <link rel="icon" href="https://jfk-h.github.io/hosting/favicon.ico" type="image/x-icon">
+  <style>
+    body {
+      font-family: sans-serif;
+      max-width: 800px;
+      margin: 2em auto;
+      padding: 1em;
+    }
+    textarea, input {
+      width: 100%;
+      margin: 0.5em 0;
+      font-family: monospace;
+      box-sizing: border-box;
+    }
+    button {
+      padding: 0.6em 1.2em;
+      font-weight: bold;
+      margin-top: 1em;
+    }
+    label {
+      font-weight: bold;
+      margin-top: 1em;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <h1>AES-256 HTML Encryptor</h1>
+
+  <label for="keyInput">Enter 64-character hex key (AES-256):</label>
+  <input id="keyInput" placeholder="e.g. a3f5c9d8e7b4... (64 hex chars)" maxlength="64">
+
+  <label for="htmlInput">HTML content to encrypt:</label>
+  <textarea id="htmlInput" rows="10" placeholder="Paste your HTML here..."></textarea>
+
+  <button onclick="encryptHtml()">Encrypt</button>
+
+  <label for="encryptedOutput">Encrypted payload (base64, embed in HTML):</label>
+  <textarea id="encryptedOutput" rows="6" readonly></textarea>
+
+  <script>
+    function hexToBytes(hex) {
+      if (hex.length !== 64 || !/^[0-9a-fA-F]+$/.test(hex)) {
+        throw new Error("Key must be 64 hex characters (32 bytes).");
+      }
+      return new Uint8Array(hex.match(/.{2}/g).map(b => parseInt(b, 16)));
+    }
+
+    async function encryptHtml() {
+      const keyHex = document.getElementById("keyInput").value.trim();
+      const html = document.getElementById("htmlInput").value;
+
+      if (!keyHex || !html) {
+        alert("Please provide both a key and HTML content.");
+        return;
+      }
+
+      let keyBytes;
+      try {
+        keyBytes = hexToBytes(keyHex);
+      } catch (err) {
+        alert(err.message);
+        return;
+      }
+
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      const encoder = new TextEncoder();
+
+      try {
+        const key = await crypto.subtle.importKey(
+          "raw",
+          keyBytes,
+          { name: "AES-GCM" },
+          false,
+          ["encrypt"]
+        );
+
+        const ciphertext = await crypto.subtle.encrypt(
+          { name: "AES-GCM", iv: iv },
+          key,
+          encoder.encode(html)
+        );
+
+        const payload = new Uint8Array([...iv, ...new Uint8Array(ciphertext)]);
+        const b64Payload = btoa(String.fromCharCode(...payload));
+
+        document.getElementById("encryptedOutput").value = b64Payload;
+      } catch (err) {
+        console.error(err);
+        alert("Encryption failed.");
+      }
+    }
+  </script>
+</body>
+</html>

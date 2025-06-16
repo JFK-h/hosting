@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Decrypt</title>
+  <link rel="icon" href="https://jfk-h.github.io/hosting/favicon.ico" type="image/x-icon">
+  <script>
+    function parseHashParams() {
+      const params = {};
+      const hash = location.hash.slice(1);
+      for (const part of hash.split("&")) {
+        const [key, value] = part.split("=");
+        if (key && value) {
+          params[decodeURIComponent(key)] = decodeURIComponent(value);
+        }
+      }
+      return params;
+    }
+
+    function hexToBytes(hex) {
+      if (hex.length !== 64 || !/^[0-9a-fA-F]{64}$/.test(hex)) {
+        throw new Error("Invalid key. Must be 64 hexadecimal characters.");
+      }
+      return new Uint8Array(hex.match(/.{2}/g).map(b => parseInt(b, 16)));
+    }
+
+    async function fetchEncryptedFile(fileName) {
+      const url = `https://raw.githubusercontent.com/JFK-h/hosting/refs/heads/main/${fileName}`;
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch ${fileName}: ${response.status}`);
+      }
+      const b64 = await response.text();
+      const raw = atob(b64);
+      const bytes = new Uint8Array([...raw].map(c => c.charCodeAt(0)));
+      const iv = bytes.slice(0, 12);
+      const data = bytes.slice(12);
+      return { iv, data };
+    }
+
+    async function decryptAndRender(hexKey, fileName) {
+      try {
+        const keyBytes = hexToBytes(hexKey);
+        const key = await crypto.subtle.importKey(
+          "raw", keyBytes, "AES-GCM", false, ["decrypt"]
+        );
+
+        const { iv, data } = await fetchEncryptedFile(fileName);
+        const decrypted = await crypto.subtle.decrypt(
+          { name: "AES-GCM", iv }, key, data
+        );
+
+        const html = new TextDecoder().decode(decrypted);
+
+        // Full DOM wipe + inject
+        document.open();
+        document.write(html);
+        document.close();
+      } catch (err) {
+        console.error("Decryption failed:", err);
+        document.body.innerHTML = `<p style="color:red;">Decryption failed: ${err.message}</p>
+          <form>
+            <label>File: <input id="file" placeholder="file.enc" /></label><br>
+            <label>Key: <input id="key" maxlength="64" /></label><br>
+            <button type="submit">Decrypt</button>
+          </form>`;
+        document.querySelector("form").onsubmit = e => {
+          e.preventDefault();
+          const file = document.getElementById("file").value.trim();
+          const key = document.getElementById("key").value.trim();
+          decryptAndRender(key, file);
+        };
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      const params = parseHashParams();
+      if (params.file && params.key) {
+        decryptAndRender(params.key, params.file);
+      } else {
+        document.body.innerHTML = `<p>Enter decryption info:</p>
+          <form>
+            <label>File: <input id="file" placeholder="file.enc" /></label><br>
+            <label>Key: <input id="key" maxlength="64" /></label><br>
+            <button type="submit">Decrypt</button>
+          </form>`;
+        document.querySelector("form").onsubmit = e => {
+          e.preventDefault();
+          const file = document.getElementById("file").value.trim();
+          const key = document.getElementById("key").value.trim();
+          decryptAndRender(key, file);
+        };
+      }
+    });
+  </script>
+</head>
+<body>
+</body>
+</html>
